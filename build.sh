@@ -52,16 +52,18 @@ grep -q GPIO_NUM_38 pico-keys-sdk/src/led/led.c || { echo "FATAL: led.c patch fa
 grep -q GPIO_NUM_38 pico-keys-sdk/src/led/led_neopixel.c || { echo "FATAL: led_neopixel.c patch failed" >&2; exit 1; }
 echo "  OK"
 
+echo "--- pin esp_tinyusb to pre-1.7.6 (avoid API change that breaks CCID descriptor handling) ---"
+sed -i "s/\"^1.7.6\"/\">=1.4.0,<1.7.6\"/" \
+  pico-keys-sdk/config/esp32/components/pico-keys-sdk/idf_component.yml
+sed -i "/espressif\/esp_tinyusb/a\\  espressif/tinyusb: \">=0.15.0,<0.21.0\"" \
+  pico-keys-sdk/config/esp32/components/pico-keys-sdk/idf_component.yml
+echo "  OK"
+
 echo "--- patch: FORCE_BUTTON_WAIT ---"
 sed -i "/^if(ESP_PLATFORM)/,/^endif()/{
   s/project(pico_hsm)/project(pico_hsm)\n    add_compile_definitions(FORCE_BUTTON_WAIT)/
 }" CMakeLists.txt
 grep -q FORCE_BUTTON_WAIT CMakeLists.txt || { echo "FATAL: CMakeLists.txt patch failed" >&2; exit 1; }
-echo "  OK"
-
-echo "--- patch: usbd_edpt_xfer API (esp_tinyusb 1.7.6 added is_isr param) ---"
-sed -i "s/usbd_edpt_xfer(rhport, \(.*\));/usbd_edpt_xfer(rhport, \1, false);/g" \
-  pico-keys-sdk/src/usb/ccid/ccid.c
 echo "  OK"
 
 echo "--- build esp32s3 ---"
