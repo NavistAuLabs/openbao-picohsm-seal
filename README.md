@@ -66,6 +66,12 @@ esptool --port <port> write-flash 0x0 output/pico_hsm_wavehsm_esp32s3.bin
 
 Verify: `opensc-tool -an` should report SmartCard-HSM.
 
+## Flash record
+
+| Date | Unit | Result |
+|---|---|---|
+| 2026-07-31 | bench (`unit-2`) | LED green flashing (GPIO 38 confirmed). CCID enumeration blocked by missing VID/PID in macOS `ifd-ccid.bundle` — smartcard verification pending. |
+
 ## Vendoring back to the-openbao-kit
 
 After a successful build and bench test, copy the binary into
