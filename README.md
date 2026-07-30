@@ -8,8 +8,19 @@ dongles used by the-openbao-kit's pkcs11 seal (homelab estate).
 | Change | Why |
 |---|---|
 | `-DFORCE_BUTTON_WAIT` | Gate rescue-applet destructive APDUs (eFuse burn `0x1D`, PHY write `0x1C`, BOOTSEL reboot) behind a physical button press. Mitigates the unauthenticated-permanent-destruction risk documented in the-openbao-kit README. Does NOT affect normal PKCS#11 operations — auto-unseal is unaffected. |
-| `NEOPIXEL_PIN` → `GPIO_NUM_38` | Waveshare ESP32-S3-LCD-1.47 wires its WS2812B RGB LED to GPIO 38 (schematic: net `RGB_IO`, component LED1). Upstream default `GPIO_NUM_48` is the LCD backlight on this board. |
+| `NEOPIXEL_PIN` -> `GPIO_NUM_38` | Waveshare ESP32-S3-LCD-1.47 wires its WS2812B RGB LED to GPIO 38 (schematic: net `RGB_IO`, component LED1). Upstream default `GPIO_NUM_48` is the LCD backlight on this board. |
 | Build from master, not v6.6 | v6.6 (2026-04-07) is ~30 security fixes behind master on the pre-authentication USB parsing surface. No release is imminent (114+ days, pattern of major-version gaps). |
+
+## Build fixes (upstream ESP32 is broken on master)
+
+The upstream nightly CI silently fails the ESP32 build (`autobuild.sh`
+has no `set -e`; only the Pico `.uf2` files ship). This build applies
+the minimum fixes:
+
+| Fix | Cause |
+|---|---|
+| Stub unused ESP-IDF components (cjson, tinycbor, mldsa*, mlkem*) | `pico-keys-sdk` unconditionally registers these as ESP-IDF components but only fetches their sources when `USB_ITF_LWIP`/`USB_ITF_HID`/`ENABLE_PQC` is set. pico-hsm enables none of these. |
+| `usbd_edpt_xfer` 5th parameter | `esp_tinyusb` 1.7.6 (managed component) added a `bool is_isr` parameter; pico-keys-sdk CCID code still calls with 4 args. |
 
 ## Pins
 

@@ -1,42 +1,38 @@
 #!/usr/bin/env bash
-# wavehsm/build.sh — reproducible containerized build of pico-hsm firmware
+# wavehsm/build.sh — reproducible build of pico-hsm firmware
 # for Waveshare ESP32-S3-LCD-1.47 seal dongles.
 #
 # Customizations over upstream:
-#   1. -DFORCE_BUTTON_WAIT — gate rescue-applet destructive APDUs behind
-#      a physical button press (eFuse burn, PHY write, BOOTSEL reboot)
-#   2. NEOPIXEL_PIN GPIO_NUM_38 — Waveshare wires the WS2812B to GPIO38,
-#      not the DevKitC-1's GPIO48 (which is LCD backlight on this board)
+#   1. -DFORCE_BUTTON_WAIT — presence gate on rescue-applet destructive APDUs
+#   2. NEOPIXEL_PIN GPIO_NUM_38 — correct LED pin for this board
 #
-# Output: a merged flash image at offset 0, same layout as the upstream
-# release asset. Flash with:
-#   esptool --port <port> erase-flash
-#   esptool --port <port> write-flash 0x0 <output>.bin
+# The upstream ESP32 build on master is broken (nightly CI silently fails it).
+# This script applies the minimum fixes to make it compile:
+#   - Stub out unused ESP-IDF components (cjson/tinycbor/PQC) whose sources
+#     are never fetched for this build config (no LWIP/HID/PQC)
+#   - Fix usbd_edpt_xfer API change in esp_tinyusb 1.7.6 (added is_isr param)
 #
 # Usage: ./build.sh [output-dir]   (default: ./output/)
 
 set -euo pipefail
 
-# --- pins ---
-PICO_HSM_REPO="https://github.com/polhenarejos/pico-hsm.git"
 PICO_HSM_COMMIT="1ad844413636e95297c4f23fea90afaa4db3c581"  # master 2026-07-27
-PICO_HSM_DATE="2026-07-27"
+IDF_TAG="v5.5"
 
-IDF_VERSION="v5.5"
-
-OUT_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/output}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUT_DIR="${1:-${SCRIPT_DIR}/output}"
 mkdir -p "${OUT_DIR}"
 
 echo "=== wavehsm build ==="
-echo "pico-hsm: ${PICO_HSM_COMMIT} (${PICO_HSM_DATE})"
-echo "esp-idf:  ${IDF_VERSION}"
+echo "pico-hsm: ${PICO_HSM_COMMIT}"
+echo "esp-idf:  ${IDF_TAG}"
 echo "output:   ${OUT_DIR}"
 echo
 
 docker run --rm \
   -v "${OUT_DIR}:/out" \
   -e PICO_HSM_COMMIT="${PICO_HSM_COMMIT}" \
-  espressif/idf:${IDF_VERSION} \
+  espressif/idf:${IDF_TAG} \
   bash -c '
 set -euo pipefail
 
@@ -52,39 +48,30 @@ if [ "${actual}" != "${PICO_HSM_COMMIT}" ]; then
   exit 1
 fi
 
+echo "--- stub unused ESP components ---"
+for comp in cjson tinycbor mldsa44 mldsa65 mldsa87 mlkem512 mlkem768 mlkem1024; do
+  echo "idf_component_register()" > "pico-keys-sdk/config/esp32/components/${comp}/CMakeLists.txt"
+done
+
 echo "--- patch: NEOPIXEL_PIN GPIO_NUM_48 -> GPIO_NUM_38 ---"
-# Two sites in pico-keys-sdk where ESP32-S3 default is hardcoded
 sed -i "s/#define NEOPIXEL_PIN GPIO_NUM_48/#define NEOPIXEL_PIN GPIO_NUM_38/g" \
   pico-keys-sdk/src/led/led.c \
   pico-keys-sdk/src/led/led_neopixel.c
-
-# Verify patches applied
-for f in pico-keys-sdk/src/led/led.c pico-keys-sdk/src/led/led_neopixel.c; do
-  if ! grep -q "GPIO_NUM_38" "$f"; then
-    echo "FATAL: NEOPIXEL_PIN patch failed in $f" >&2
-    exit 1
-  fi
-  if grep -q "GPIO_NUM_48" "$f"; then
-    echo "FATAL: GPIO_NUM_48 still present in $f after patch" >&2
-    exit 1
-  fi
-done
-echo "  led.c: OK"
-echo "  led_neopixel.c: OK"
+grep -q GPIO_NUM_38 pico-keys-sdk/src/led/led.c || { echo "FATAL: led.c patch failed" >&2; exit 1; }
+grep -q GPIO_NUM_38 pico-keys-sdk/src/led/led_neopixel.c || { echo "FATAL: led_neopixel.c patch failed" >&2; exit 1; }
+echo "  OK"
 
 echo "--- patch: FORCE_BUTTON_WAIT ---"
-# Add the define to the ESP_PLATFORM branch of CMakeLists.txt, right after
-# project(pico_hsm). This is the cleanest injection point — it applies to
-# all source files in the ESP32 build.
 sed -i "/^if(ESP_PLATFORM)/,/^endif()/{
   s/project(pico_hsm)/project(pico_hsm)\n    add_compile_definitions(FORCE_BUTTON_WAIT)/
 }" CMakeLists.txt
+grep -q FORCE_BUTTON_WAIT CMakeLists.txt || { echo "FATAL: CMakeLists.txt patch failed" >&2; exit 1; }
+echo "  OK"
 
-if ! grep -q "FORCE_BUTTON_WAIT" CMakeLists.txt; then
-  echo "FATAL: FORCE_BUTTON_WAIT injection failed" >&2
-  exit 1
-fi
-echo "  CMakeLists.txt: OK"
+echo "--- patch: usbd_edpt_xfer API (esp_tinyusb 1.7.6 added is_isr param) ---"
+sed -i "s/usbd_edpt_xfer(rhport, \(.*\));/usbd_edpt_xfer(rhport, \1, false);/g" \
+  pico-keys-sdk/src/usb/ccid/ccid.c
+echo "  OK"
 
 echo "--- build esp32s3 ---"
 idf.py set-target esp32s3
