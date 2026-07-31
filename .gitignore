@@ -1,1 +1,3 @@
-output/
+artifacts/
+.DS_Store
+output-v66/
