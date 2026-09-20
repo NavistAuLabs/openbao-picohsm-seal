@@ -12,7 +12,7 @@ Custom pico-hsm firmware build for the Waveshare ESP32-S3-LCD-1.47, reproducible
 
 ## Why v6.6, not master
 
-Master has ~30 security fixes but its ESP32 build is broken upstream
+Master has ~30 security fixes (counted against commit `1ad8444`) but its ESP32 build is broken upstream
 (nightly CI silently fails it — `autobuild.sh` has no `set -e`); the
 descriptor regression was traced to tinyusb 0.21.0, not to master.
 Separately, master's reorganised key storage

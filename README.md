@@ -91,7 +91,7 @@ Workstation, for build and ceremony:
 - Docker.
 - `esptool` 5 or later.
 - OpenSC: `sc-hsm-tool`, `pkcs11-tool`, `opensc-tool`.
-- Java 17 or later.
+- Java. Rehearsed with OpenJDK 22.
 - `scsh` 3.18.77. See [`ceremony/SCSH-PROVENANCE.md`](ceremony/SCSH-PROVENANCE.md).
 - macOS, for the ceremony script's ramdisk.
 
@@ -132,7 +132,7 @@ Workstation, for build and ceremony:
 - Check for CVEs and GitHub advisories against pico-hsm and pico-keys-sdk
   before deploying. None were published as of commit `1ad8444`.
 - Report firmware issues upstream at
-  https://github.com/polhenarejos/pico-hsm.
+  [github.com/polhenarejos/pico-hsm](https://github.com/polhenarejos/pico-hsm).
 
 ## Contributing · Security · License
 
