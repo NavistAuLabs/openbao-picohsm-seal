@@ -2,13 +2,8 @@
 
 ## Supported versions
 
-Security fixes go onto the most recent tag. There are no long-term support
-branches.
-
-| Version | Supported |
-| ------- | --------- |
-| 0.1.x   | Yes       |
-| < 0.1   | No        |
+Security fixes go onto `main`. There are no tagged releases and no
+long-term support branches.
 
 ## Report a vulnerability
 

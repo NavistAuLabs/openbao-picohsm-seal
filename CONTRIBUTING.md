@@ -8,10 +8,8 @@ on the documentation style.
 
 - Fork the repository, branch from `main` (`feat/…`, `fix/…`, `docs/…`), and
   open your pull request against `main`.
-- Releases are annotated git tags. There are no release assets and no CI.
-- **A published tag is never moved or deleted.** People's builds and ceremony
-  records are pinned to it, and repointing a tag silently changes what it
-  refers to. A mistake in a release is fixed by a new tag.
+- There are no releases, release assets or CI. `main` is what people use;
+  pin a commit if you need something stable.
 
 ## Your change has to have been run
 

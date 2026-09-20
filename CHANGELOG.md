@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format is
 Any change to a firmware patch or to the boot-guard sequence is called out
 here regardless of size.
 
-## [0.1.0] - 2026-09-20
+## [Unreleased]
 
 ### Added
 
