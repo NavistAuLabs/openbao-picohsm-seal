@@ -1,5 +1,4 @@
-artifacts/
+firmware/artifacts/
 .DS_Store
-output-v66/
 # local notes
 docs/plans/

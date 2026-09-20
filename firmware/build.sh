@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wavehsm/build.sh — reproducible build of pico-hsm firmware
+# firmware/build.sh — reproducible build of pico-hsm firmware
 # for Waveshare ESP32-S3-LCD-1.47 seal dongles.
 #
 # Outputs to artifacts/<ref>-<variant>/ so each build is preserved.
@@ -10,7 +10,7 @@
 #   ./build.sh master custom     # master + our patches + component stubs
 #
 # Artifacts land in artifacts/<ref>-<variant>/:
-#   pico_hsm_wavehsm_esp32s3.bin
+#   pico_hsm_esp32s3.bin
 #   SHA256SUMS
 #   build-info.txt
 
@@ -46,14 +46,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${SCRIPT_DIR}/artifacts/${ARTIFACT_NAME}"
 mkdir -p "${OUT_DIR}"
 
-if [ -f "${OUT_DIR}/pico_hsm_wavehsm_esp32s3.bin" ]; then
+if [ -f "${OUT_DIR}/pico_hsm_esp32s3.bin" ]; then
     echo "Artifact already exists: ${OUT_DIR}/"
-    shasum -a 256 "${OUT_DIR}/pico_hsm_wavehsm_esp32s3.bin"
+    shasum -a 256 "${OUT_DIR}/pico_hsm_esp32s3.bin"
     echo "Delete the directory to rebuild."
     exit 0
 fi
 
-echo "=== wavehsm build: ${ARTIFACT_NAME} ==="
+echo "=== firmware build: ${ARTIFACT_NAME} ==="
 echo "pico-hsm: ${REF} (${SHORT_COMMIT})"
 echo "variant:  ${VARIANT}"
 echo "esp-idf:  ${IDF_TAG}"
@@ -128,11 +128,11 @@ idf.py all
 
 echo "--- merge flash image ---"
 cd build
-esptool.py --chip ESP32-S3 merge_bin -o /out/pico_hsm_wavehsm_esp32s3.bin @flash_args
+esptool.py --chip ESP32-S3 merge_bin -o /out/pico_hsm_esp32s3.bin @flash_args
 cd ..
 
 echo "--- checksums ---"
-sha256sum /out/pico_hsm_wavehsm_esp32s3.bin | tee /out/SHA256SUMS
+sha256sum /out/pico_hsm_esp32s3.bin | tee /out/SHA256SUMS
 
 echo
 echo "=== build complete ==="
@@ -145,7 +145,7 @@ commit: ${PICO_HSM_COMMIT}
 variant: ${VARIANT}
 idf: ${IDF_TAG}
 built: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-sha256: $(shasum -a 256 "${OUT_DIR}/pico_hsm_wavehsm_esp32s3.bin" | awk '{print $1}')
+sha256: $(shasum -a 256 "${OUT_DIR}/pico_hsm_esp32s3.bin" | awk '{print $1}')
 INFO
 
 echo
