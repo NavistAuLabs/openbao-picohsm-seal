@@ -1,0 +1,70 @@
+---
+# failover/ansible/tasks/seal_dongle.yaml -- pico-hsm seal dongle hub support.
+#
+# Both dongles live on a uhubctl-switchable USB hub;
+# the spare's port is powered off in normal operation. Hub port power does
+# NOT survive a power cut (the hub returns all-ports-on), so a boot guard
+# re-establishes the intended state before the VMs start.
+#
+# The guard also ATR-probes the spare while it is briefly powered, turning
+# an untested cold standby into something verified every boot.
+#
+# SKIPPED until the hub port numbers are known -- set the three vars below
+# once the hub is physically installed and `lsusb -t` shows the topology.
+# Same skip-while-unset pattern as any optional hardware role.
+
+- name: Install seal-dongle host tooling (uhubctl, opensc, pcscd)
+  ansible.builtin.apt:
+    name:
+      - uhubctl      # per-port USB power control (VIA Labs 2109:* hubs)
+      - opensc       # opensc-tool, for the ATR liveness probe
+      - pcscd        # OpenSC's smartcard daemon
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+  when: proto_seal_hub_location | default('') | length > 0
+  tags: [seal-dongle]
+
+- name: Deploy seal-dongle swap script
+  ansible.builtin.template:
+    src: seal-dongle-swap.sh.j2
+    dest: /usr/local/bin/seal-dongle-swap
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: proto_seal_hub_location | default('') | length > 0
+  tags: [seal-dongle]
+
+- name: Deploy seal-dongle boot guard script
+  ansible.builtin.template:
+    src: seal-dongle-boot-guard.sh.j2
+    dest: /usr/local/bin/seal-dongle-boot-guard.sh
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: proto_seal_hub_location | default('') | length > 0
+  tags: [seal-dongle]
+
+- name: Deploy seal-dongle boot guard unit
+  ansible.builtin.template:
+    src: seal-dongle-boot-guard.service.j2
+    dest: /etc/systemd/system/seal-dongle-boot-guard.service
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: proto_seal_hub_location | default('') | length > 0
+  notify: reload systemd
+  tags: [seal-dongle]
+
+- name: Enable seal-dongle boot guard
+  ansible.builtin.systemd:
+    name: seal-dongle-boot-guard.service
+    enabled: true
+    daemon_reload: true
+  become: true
+  when: proto_seal_hub_location | default('') | length > 0
+  tags: [seal-dongle]

@@ -1,0 +1,89 @@
+#!/bin/bash
+# Managed by Ansible -- do not edit directly
+#
+# failover/ansible/templates/seal-dongle-boot-guard.sh.j2
+#
+# Establishes pico-hsm seal dongle hub state before VMs start, and probes
+# the spare while it is briefly powered.
+#
+# Sequence: both ports off -> spare on -> ATR probe -> spare off -> prod on.
+# Only one dongle is ever powered, so the two electrically-identical units
+# (both 2e8a:10fd) can never be confused by USB passthrough.
+#
+# FAIL-OPEN BY DESIGN. Every failure path still leaves production powered
+# and exits 0. A spare that fails its probe must never block OpenBao's
+# unseal -- otherwise the spare takes down the thing it exists to protect.
+
+set -u
+
+HUB="{{ proto_seal_hub_location }}"
+PROD_PORT="{{ proto_seal_prod_port }}"
+SPARE_PORT="{{ proto_seal_spare_port }}"
+SETTLE={{ proto_seal_settle_seconds | default(3) }}
+METRICS_DIR="{{ proto_seal_metrics_dir | default('/var/lib/node_exporter/textfile_collector') }}"
+
+log() { logger -t seal-dongle-guard -- "$*"; echo "seal-dongle-guard: $*"; }
+
+power() {  # port, on|off
+    if ! uhubctl -l "$HUB" -p "$1" -a "$2" >/dev/null 2>&1; then
+        log "WARN uhubctl -l $HUB -p $1 -a $2 failed"
+        return 1
+    fi
+    return 0
+}
+
+emit_metric() {  # 1 = spare healthy, 0 = not
+    [ -d "$METRICS_DIR" ] || return 0
+    local tmp="$METRICS_DIR/.seal_dongle_spare.$$"
+    {
+        echo "# HELP seal_dongle_spare_healthy Spare pico-hsm answered an ATR probe at boot."
+        echo "# TYPE seal_dongle_spare_healthy gauge"
+        echo "seal_dongle_spare_healthy $1"
+    } > "$tmp" && mv -f "$tmp" "$METRICS_DIR/seal_dongle_spare.prom"
+}
+
+log "start: hub=$HUB prod=$PROD_PORT spare=$SPARE_PORT"
+
+# 1. Known state: everything off.
+power "$PROD_PORT" off
+power "$SPARE_PORT" off
+sleep "$SETTLE"
+
+# 2. Spare alone, so the probe cannot possibly address the wrong device.
+spare_ok=0
+if power "$SPARE_PORT" on; then
+    sleep "$SETTLE"
+    # ATR check, NOT enumeration: a wedged dongle still enumerates on USB
+    # perfectly while its card application is dead, so lsusb would pass it.
+    if timeout 20 opensc-tool -an 2>/dev/null | grep -q "SmartCard-HSM"; then
+        spare_ok=1
+        log "spare OK (ATR answered)"
+    else
+        log "WARN spare did NOT answer an ATR probe -- may be wedged or dead"
+    fi
+else
+    log "WARN could not power on spare for probing"
+fi
+emit_metric "$spare_ok"
+
+# 3. Spare back off. Retry once: leaving it powered alongside production is
+#    the one state that breaks passthrough.
+power "$SPARE_PORT" off
+sleep 1
+if ! power "$SPARE_PORT" off; then
+    log "ERROR spare port may still be powered -- passthrough may bind the wrong unit"
+fi
+
+# 4. Production on. This is the only step that actually matters.
+if power "$PROD_PORT" on; then
+    sleep "$SETTLE"
+    log "production dongle powered"
+else
+    log "ERROR could not power on production dongle -- OpenBao will not unseal"
+fi
+
+# Record which port is active for the swap script
+echo "$PROD_PORT" > /run/seal-dongle-active-port
+
+log "done (spare_healthy=$spare_ok)"
+exit 0

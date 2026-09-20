@@ -1,0 +1,30 @@
+# Managed by Ansible -- do not edit directly
+#
+# failover/ansible/templates/seal-dongle-boot-guard.service.j2
+#
+# Must complete BEFORE Proxmox starts guests, so USB passthrough
+# sees exactly one dongle: hub port power does not survive a power cut, and
+# both units share USB IDs (2e8a:10fd).
+
+[Unit]
+Description=pico-hsm seal dongle hub state + spare liveness probe
+Documentation=https://github.com/NavistAuLabs/openbao-picohsm-seal
+After=systemd-udev-settle.service pcscd.service
+Wants=pcscd.service
+Before=pve-guests.service
+DefaultDependencies=no
+RequiresMountsFor=/usr/local/bin
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/seal-dongle-boot-guard.sh
+TimeoutStartSec=120
+# Fail-open: the script always exits 0, and this makes sure a hang or a
+# crash still cannot block guest startup.
+SuccessExitStatus=0 1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

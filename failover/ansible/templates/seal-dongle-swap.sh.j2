@@ -1,0 +1,100 @@
+#!/bin/bash
+# Managed by Ansible -- do not edit directly
+#
+# failover/ansible/templates/seal-dongle-swap.sh.j2
+#
+# Hot-swap production and spare pico-hsm seal dongles. Safe to run while
+# OpenBao is live (it only uses the dongle at unseal time).
+#
+# This is the emergency lever. To persist the swap, update
+# proto_seal_prod_port / proto_seal_spare_port in host_vars and redeploy.
+#
+# Usage:
+#   seal-dongle-swap               # swap prod <-> spare
+#   seal-dongle-swap --status      # show current state
+#   seal-dongle-swap --probe       # ATR-probe whichever is powered
+
+set -u
+
+HUB="{{ proto_seal_hub_location }}"
+PORT_A={{ proto_seal_prod_port }}
+PORT_B={{ proto_seal_spare_port }}
+SETTLE={{ proto_seal_settle_seconds | default(3) }}
+STATE_FILE="/run/seal-dongle-active-port"
+
+log() { logger -t seal-dongle-swap -- "$*"; echo "$*"; }
+
+current_port() {
+    if [ -f "$STATE_FILE" ]; then
+        cat "$STATE_FILE"
+    else
+        # No state file — assume boot guard ran and prod is active
+        echo "$PORT_A"
+    fi
+}
+
+other_port() {
+    local cur="$1"
+    if [ "$cur" = "$PORT_A" ]; then
+        echo "$PORT_B"
+    else
+        echo "$PORT_A"
+    fi
+}
+
+port_role() {
+    local port="$1"
+    if [ "$port" = "$PORT_A" ]; then
+        echo "prod (port $PORT_A)"
+    else
+        echo "spare (port $PORT_B)"
+    fi
+}
+
+do_status() {
+    local cur
+    cur=$(current_port)
+    local other
+    other=$(other_port "$cur")
+    echo "active: port $cur ($(port_role "$cur"))"
+    echo "parked: port $other ($(port_role "$other"))"
+    uhubctl -l "$HUB" 2>/dev/null | grep -E "Port ($PORT_A|$PORT_B):" | sed 's/^/  /'
+}
+
+do_probe() {
+    if timeout 20 opensc-tool -an 2>/dev/null | grep -q "SmartCard-HSM"; then
+        echo "ATR: OK (SmartCard-HSM)"
+    else
+        echo "ATR: FAILED — device may be wedged or not powered"
+        return 1
+    fi
+}
+
+do_swap() {
+    local cur
+    cur=$(current_port)
+    local next
+    next=$(other_port "$cur")
+
+    log "swapping: port $cur ($(port_role "$cur")) -> port $next ($(port_role "$next"))"
+
+    # Power on the new one first, then power off the old one.
+    # This minimises the window where neither is available.
+    log "powering on port $next"
+    uhubctl -l "$HUB" -p "$next" -a on >/dev/null 2>&1
+    sleep "$SETTLE"
+
+    log "powering off port $cur"
+    uhubctl -l "$HUB" -p "$cur" -a off >/dev/null 2>&1
+    sleep 1
+
+    echo "$next" > "$STATE_FILE"
+    log "active: port $next ($(port_role "$next"))"
+    log "NOTE: to persist, update proto_seal_prod_port/spare_port in host_vars and redeploy"
+}
+
+case "${1:-}" in
+    --status) do_status ;;
+    --probe)  do_probe ;;
+    *)        do_swap ;;
+esac
