@@ -1,0 +1,89 @@
+---
+# unseal-host/ansible/tasks/picohsm_host.yaml -- make a pico-hsm dongle
+# reachable by OpenBao's pkcs11 seal on a Debian VM.
+#
+# Two things the stock cloud image gets wrong for this job: the cloud
+# kernel has no USB drivers, and Debian's libccid predates the pico-hsm's
+# VID/PID. Both are fixed here; pcscd is then the transport OpenBao's
+# opensc-pkcs11.so talks through.
+
+# --- Standard kernel (USB support for pico-hsm passthrough) ---
+#
+# The debian genericcloud image ships the cloud kernel which strips USB
+# drivers. The OpenBao VM needs USB for the pico-hsm seal dongle passthrough.
+- name: Install standard kernel and remove cloud kernel
+  ansible.builtin.apt:
+    name:
+      - linux-image-amd64
+      - usbutils
+    state: present
+  become: true
+
+- name: Find installed cloud kernel packages
+  ansible.builtin.shell: dpkg -l 'linux-image-*cloud*' 2>/dev/null | awk '/^ii/{print $2}'
+  become: true
+  register: _cloud_pkgs
+  changed_when: false
+
+- name: Remove cloud kernel packages (standard kernel has USB support)
+  ansible.builtin.apt:
+    name: "{{ _cloud_pkgs.stdout_lines }}"
+    state: absent
+    purge: true
+  become: true
+  register: _cloud_kernel_removed
+  when: _cloud_pkgs.stdout_lines | length > 0
+
+- name: Update GRUB after kernel change
+  ansible.builtin.command: update-grub
+  become: true
+  when: _cloud_kernel_removed.changed
+
+- name: Check running kernel has USB support
+  ansible.builtin.shell: modprobe -n usbcore
+  become: true
+  register: _usb_check
+  changed_when: false
+  failed_when: false
+
+- name: Reboot into standard kernel
+  ansible.builtin.reboot:
+    reboot_timeout: 300
+  become: true
+  when: _cloud_kernel_removed.changed or _usb_check.rc != 0
+
+# --- pcscd for pico-hsm PKCS#11 access ---
+#
+# sc-hsm-embedded's CT-API driver doesn't work with pico-hsm (its
+# isSupported() allowlist aside, the CCID handshake fails — slot empty).
+# pcscd + libccid works once the pico-hsm VID/PID is added to the
+# libccid config. OpenBao uses opensc-pkcs11.so (pcscd backend) instead
+# of libsc-hsm-pkcs11.so (CT-API).
+- name: Install pcscd and opensc for pico-hsm access
+  ansible.builtin.apt:
+    name:
+      - pcscd
+      - opensc
+      - libccid
+    state: present
+  become: true
+
+- name: Add pico-hsm VID/PID to libccid config
+  ansible.builtin.script:
+    cmd: "{{ role_path }}/files/patch-libccid-picohsm.py"
+    executable: python3
+  become: true
+  register: _ccid_patch
+  changed_when: "'CHANGED' in _ccid_patch.stdout"
+  notify: restart pcscd
+
+- name: Ensure pcscd is unmasked, enabled and running
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: false
+    enabled: true
+    state: started
+  become: true
+  loop:
+    - pcscd.socket
+    - pcscd.service
